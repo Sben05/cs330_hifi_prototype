@@ -1,590 +1,1077 @@
-# CyberBridge Guardian — Aurora UI (Streamlit)
-# High-contrast neon/glass design, sticky glass nav, Duo QR gating, no stray "\n"
-# Works in Colab + ngrok; uses .streamlit/config.toml and assets/custom.css
-
 import streamlit as st
+import time
 import pandas as pd
-import numpy as np
-import math, re, io, base64, random, time, difflib, hashlib
-from datetime import datetime
-from urllib.parse import urlparse
+import altair as alt
+import datetime
+from types import SimpleNamespace
 
-# Optional dependencies (graceful if missing)
-try:
-    import qrcode
-    import pyotp
-except Exception:
-    qrcode = None
-    pyotp = None
-
-try:
-    import tldextract
-except Exception:
-    tldextract = None
-
-from streamlit_option_menu import option_menu
-
-# ------------------------- Page setup -------------------------
-st.set_page_config(page_title="CyberBridge Guardian", page_icon="🛡️", layout="wide")
-st.markdown("<meta name='theme-color' content='#0A0B0F'>", unsafe_allow_html=True)
-
-# Load external CSS (keeps styles sticky under Colab/ngrok)
-def load_css(path: str):
-    try:
-        with open(path) as f:
-            st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
-    except Exception:
-        st.warning(f"Custom CSS not found at {path}")
-
-load_css("assets/custom.css")
-
-# ------------------------- Hero -------------------------
-st.markdown(
-    """
-    <div class="hero fade-in">
-      <div class="title">CyberBridge Guardian</div>
-      <div class="kicker">Duo MFA · Umbrella DNS · Meraki Planner · Mini-SOC · ROI & Equity</div>
-    </div>
-    """,
-    unsafe_allow_html=True,
+# --- Page Config ---
+st.set_page_config(
+    page_title="Zenith Wellness",
+    page_icon="",
+    layout="centered",  # This will be further controlled by our CSS
+    initial_sidebar_state="expanded"
 )
 
-tb1, tb2, tb3 = st.columns([1,2,1])
-with tb1:
-    demo_mode = st.checkbox("Use sample data", value=True)
-with tb3:
-    st.markdown('<div class="small" style="text-align:right;">© Shreeniket Bendre; projected data.</div>', unsafe_allow_html=True)
-
-# ------------------------- Top Nav -------------------------
-with st.container():
-    st.markdown('<div class="cb-navwrap">', unsafe_allow_html=True)
-    selected = option_menu(
-        None,
-        ["Home", "Duo MFA", "Umbrella DNS", "Meraki Planner", "Mini-SOC", "ROI & Equity", "Appendix"],
-        icons=["house", "shield-lock", "shield-shaded", "wifi", "activity", "cash-coin", "book"],
-        menu_icon="cast", default_index=0, orientation="horizontal",
-        styles={
-            "container": {"background-color": "transparent", "padding": "0"},
-            "icon": {"color": "#22D3EE", "font-size": "18px"},
-            "nav-link": {
-                "font-size": "15px", "font-weight": "800",
-                "text-transform": "none", "color": "#EAF2FF",
-                "margin": "0 6px", "padding":"10px 14px",
-                "border-radius":"12px"
-            },
-            "nav-link-selected": {
-                "background-color": "transparent", "color": "#FFFFFF",
-                "border":"1px solid rgba(255,255,255,.14)"
-            },
+# --- App Data ---
+# Encapsulating all default data in one place for easier management.
+def get_default_events():
+    """Returns a list of all available events."""
+    return [
+        {
+            "id": "evt1",
+            "title": "Wellness Week Yoga", "time": "Today, 6:00 PM",
+            "loc": "Rec Center, Main Gym", "dist": "0.3 mi", "cost": "Free",
+            "desc": "Join us for a relaxing evening yoga session. All levels welcome!",
+            "details": "This session is part of Wellness Week and focuses on vinyasa flow. Mats are provided, but you can bring your own. Please arrive 10 minutes early."
+        },
+        {
+            "id": "evt2",
+            "title": "Mindful Meditation Drop-in", "time": "Tomorrow, 12:00 PM",
+            "loc": "Student Union, Rm 302", "dist": "0.5 mi", "cost": "Free",
+            "desc": "A 30-minute guided meditation to de-stress during your day.",
+            "details": "No experience necessary. This is a guided audio meditation led by a campus wellness professional. Feel free to drop in anytime during the 12-1 PM hour."
+        },
+        {
+            "id": "evt3",
+            "title": "Nutrition & Brain Food", "time": "Fri, Nov 22, 4:00 PM",
+            "loc": "Health Services Bldg.", "dist": "0.7 mi", "cost": "Free (w/ RSVP)",
+            "desc": "Learn how to fuel your body and mind for finals week.",
+            "details": "A nutritionist will discuss foods that boost memory and focus, and healthy snack ideas for late-night study sessions. Free samples provided!"
+        },
+        {
+            "id": "evt4",
+            "title": "Therapy Dogs @ The Library", "time": "Mon, Nov 25, 2:00 PM",
+            "loc": "Main Library, 1st Floor", "dist": "0.2 mi", "cost": "Free",
+            "desc": "Take a break from studying and pet some friendly dogs!",
+            "details": "Certified therapy dogs will be available in the main lobby. Take 15 minutes to de-stress and cuddle with a furry friend. Hosted by 'Paws for a Cause'."
+        },
+        {
+            "id": "evt5",
+            "title": "Campus 5K Fun Run", "time": "Sat, Nov 30, 9:00 AM",
+            "loc": "Main Quad", "dist": "0.1 mi", "cost": "$5 Entry",
+            "desc": "Join the annual Turkey Trot 5K! All proceeds go to the campus food pantry.",
+            "details": "Check-in starts at 8:00 AM. The first 100 runners get a free t-shirt. This is a fun run, so all speeds (walking or running) are welcome!"
         }
+    ]
+
+def get_default_resources():
+    """Returns a list of all available resources."""
+    return [
+        {"id": "res1", "cat": "Mental Health", "title": "5 Ways to Beat Exam Stress", "read_time": "4 min read", "img": "https://placehold.co/600x400/EDE7F6/4A148C?text=Mental+Health&font=inter"},
+        {"id": "res2", "cat": "Study", "title": "The Pomodoro Technique: Explained", "read_time": "3 min read", "img": "https://placehold.co/600x400/EDE7F6/4A148C?text=Study+Tips&font=inter"},
+        {"id": "res3", "cat": "Campus", "title": "Contact Campus Counseling Services", "read_time": "1 min read", "img": "https://placehold.co/600x400/EDE7F6/4A148C?text=Campus&font=inter"},
+        {"id": "res4", "cat": "Mental Health", "title": "Understanding Burnout vs. Stress", "read_time": "5 min read", "img": "https://placehold.co/600x400/EDE7F6/4A148C?text=Wellness&font=inter"},
+        {"id": "res5", "cat": "Sleep", "title": "Why 8 Hours is Non-Negotiable", "read_time": "4 min read", "img": "https://placehold.co/600x400/EDE7F6/4A148C?text=Sleep&font=inter"},
+        {"id": "res6", "cat": "Study", "title": "Active Recall: How to Really Learn", "read_time": "6 min read", "img": "https.placehold.co/600x400/EDE7F6/4A148C?text=Academics&font=inter"},
+    ]
+
+# --- Initialize Session State ---
+# This is the "brain" of the app, controlling all interactivity.
+if 'page' not in st.session_state:
+    st.session_state.page = "🏠 Today"
+if 'user_goals' not in st.session_state:
+    st.session_state.user_goals = ["Meditate 5 mins/day", "Sleep 8 hours"]
+
+# --- Timer State ---
+if 'timer_state' not in st.session_state:
+    st.session_state.timer_state = SimpleNamespace(
+        running=False,
+        start_time=0,
+        task_name="",
+        duration_min=25,
+        is_break=False,
+        break_duration_min=5
     )
+
+# --- Modal & Sub-Page States ---
+if 'breathing_active' not in st.session_state:
+    st.session_state.breathing_active = False
+if 'wind_down_active' not in st.session_state:
+    st.session_state.wind_down_active = False
+if 'selected_event_details' not in st.session_state:
+    st.session_state.selected_event_details = None
+if 'show_modal' not in st.session_state:
+    st.session_state.show_modal = None  # e.g., "privacy", "help", "logout"
+
+# --- Data States ---
+if 'all_events' not in st.session_state:
+    st.session_state.all_events = get_default_events()
+if 'my_schedule' not in st.session_state:
+    st.session_state.my_schedule = []  # Stores IDs of RSVP'd events
+if 'all_resources' not in st.session_state:
+    st.session_state.all_resources = get_default_resources()
+
+# --- Custom CSS for HIFI Purple/White Theme ---
+def load_css():
+    """Injects custom CSS for the HIFI app theme."""
+    st.markdown("""
+    <style>
+        /* --- Import Google Font --- */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        
+        /* --- Base & App Layout --- */
+        html, body, .stApp {
+            background-color: #F8F7FF; /* Very light purple-white */
+            font-family: 'Inter', sans-serif;
+        }
+        
+        /* --- Create the "App Pane" Look --- */
+        .stApp {
+            max-width: 680px; /* Max width of the app content */
+            margin: 0 auto;  /* Center the app */
+            padding: 1rem 0.5rem;
+            border-left: 1px solid #E0E0E0;
+            border-right: 1px solid #E0E0E0;
+            min-height: 100vh;
+            background-color: #FFFFFF; /* Main app pane is white */
+            box-shadow: 0 0 40px rgba(0,0,0,0.05);
+        }
+
+        /* --- Sidebar Navigation --- */
+        [data-testid="stSidebar"] {
+            background-color: #F8F7FF; /* Sidebar background matches page bg */
+            border-right: 1px solid #E0E0E0;
+            padding-top: 1.5rem;
+        }
+        [data-testid="stSidebar"] h1 {
+            color: #4A148C; /* Deep Purple */
+            font-weight: 700;
+            font-size: 28px;
+            padding: 0 10px;
+        }
+        [data-testid="stSidebar"] .stMarkdown {
+            color: #6A11CB; /* Medium Purple */
+            font-size: 14px;
+            padding: 0 10px;
+            margin-bottom: 1.5rem;
+        }
+        
+        /* --- Sidebar Radio (Nav) --- */
+        .stRadio [role="radio"] {
+            border-radius: 10px;
+            padding: 12px 18px;
+            margin: 0.5rem;
+            transition: all 0.3s ease;
+            border: 1px solid transparent;
+            font-weight: 500;
+            color: #5E35B1; 
+        }
+        .stRadio [role="radio"]:hover {
+            background-color: #F4F0FF; /* Light purple hover */
+        }
+        /* --- HIFI Selected Nav Item --- */
+        .stRadio [data-baseweb="radio"] span[data-checked="true"] {
+            background-color: #EDE7F6; /* Light purple selected */
+            border: 1px solid #D1C4E9;
+            color: #4A148C;
+            font-weight: 700;
+            border-left: 4px solid #6A11CB; /* Accent border */
+            border-radius: 10px;
+        }
+        .stRadio [data-baseweb="radio"] span {
+            font-size: 1.1rem;
+        }
+
+        /* --- Main Content --- */
+        h1 {
+            color: #4A148C;
+            font-weight: 700;
+        }
+        h2 {
+            color: #5E35B1;
+            border-bottom: 2px solid #EDE7F6;
+            padding-bottom: 5px;
+        }
+        h3 {
+            color: #673AB7;
+        }
+        
+        /* --- Custom Cards --- */
+        .card {
+            background-color: #FFFFFF;
+            border-radius: 20px;
+            padding: 25px;
+            box-shadow: 0 8px 32px rgba(106, 17, 203, 0.08); /* Softer shadow */
+            border: 1px solid #EDE7F6;
+            margin-bottom: 20px;
+        }
+        .card-highlight {
+            background-color: #FAF5FF; /* Lighter purple card */
+            border: 1px solid #D1C4E9;
+            padding: 25px;
+            border-radius: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 12px rgba(106, 17, 203, 0.05);
+        }
+        
+        /* --- Metric Cards (for Sleep) --- */
+        .metric-card {
+            background-color: #FFFFFF;
+            border-radius: 20px;
+            padding: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            text-align: center;
+            border: 1px solid #E0E0E0;
+            height: 100%; /* Make cols same height */
+        }
+        /* ... (Metric card h3, p styles remain same) ... */
+        
+        /* --- Resource Card (New) --- */
+        .resource-card {
+            border: 1px solid #E0E0E0;
+            border-radius: 15px;
+            overflow: hidden;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            transition: all 0.3s ease;
+        }
+        .resource-card:hover {
+            box-shadow: 0 8px 24px rgba(106, 17, 203, 0.1);
+            transform: translateY(-2px);
+        }
+        .resource-card img {
+            width: 100%;
+            height: 150px;
+            object-fit: cover;
+        }
+        .resource-card-content {
+            padding: 15px 20px;
+        }
+        .resource-card-content h3 {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+        .resource-card-content small {
+            color: #6A11CB;
+            font-weight: 500;
+        }
+
+        /* --- Buttons --- */
+        .stButton > button {
+            background-image: linear-gradient(135deg, #6A11CB 0%, #2575FC 100%);
+            color: white;
+            border: none;
+            border-radius: 25px; /* Fully rounded */
+            padding: 12px 25px;
+            font-size: 1rem;
+            font-weight: 600;
+            box-shadow: 0 4px 15px rgba(106, 17, 203, 0.3);
+            transition: all 0.3s ease;
+            width: 100%; /* Make buttons full width */
+        }
+        /* ... (Button hover, active, secondary styles remain same) ... */
+        
+        /* --- Sliders --- */
+        .stSlider [data-baseweb="slider"] {
+            color: #7E57C2; /* Purple slider track */
+        }
+        
+        /* --- Chat Messages --- */
+        [data-testid="chat-message-container"] {
+            background-color: #F4F0FF;
+            border-radius: 15px;
+            border: 1px solid #D1C4E9;
+            box-shadow: 0 4px 12px rgba(106, 17, 203, 0.05);
+        }
+        
+        /* --- Goal List --- */
+        /* ... (Goal list styles remain same) ... */
+
+        /* --- Breathing Animator (New) --- */
+        .breathing-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 20px;
+            text-align: center;
+        }
+        .breathing-circle {
+            width: 200px;
+            height: 200px;
+            background-color: #EDE7F6;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 5px solid #D1C4E9;
+            animation: pulse 8s ease-in-out infinite;
+        }
+        .breathing-text {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #4A148C;
+            animation: text-fade 8s ease-in-out infinite;
+        }
+        @keyframes pulse {
+            0% { transform: scale(0.8); background-color: #D1C4E9; }
+            50% { transform: scale(1.1); background-color: #EDE7F6; }
+            100% { transform: scale(0.8); background-color: #D1C4E9; }
+        }
+        @keyframes text-fade {
+            0% { content: "Inhale"; opacity: 1; }
+            40% { opacity: 1; }
+            50% { content: "Hold"; opacity: 1; }
+            60% { opacity: 1; }
+            61% { content: "Exhale"; opacity: 1; }
+            90% { opacity: 1; }
+            100% { content: "Inhale"; opacity: 1; }
+        }
+        /* A bit of a hack to change text with animation */
+        .breathing-text::before {
+            content: "Inhale";
+            animation: text-change 8s ease-in-out infinite;
+        }
+        @keyframes text-change {
+            0% { content: "Inhale"; }
+            45% { content: "Inhale"; }
+            50% { content: "Hold"; }
+            60% { content: "Hold"; }
+            65% { content: "Exhale"; }
+            95% { content: "Exhale"; }
+            100% { content: "Inhale"; }
+        }
+        
+        /* --- Wind-down Checklist (New) --- */
+        .wind-down-item {
+            display: flex;
+            align-items: center;
+            font-size: 1.1rem;
+            background-color: #F4F0FF;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 10px;
+            border: 1px solid #D1C4E9;
+        }
+        .wind-down-item span {
+            margin-left: 10px;
+        }
+        
+        /* --- Dialog/Modal Styling (New) --- */
+        [data-baseweb="dialog"] {
+            border-radius: 20px;
+            border: 2px solid #EDE7F6;
+            box-shadow: 0 8px 32px rgba(106, 17, 203, 0.1);
+        }
+        
+    </style>
+    """, unsafe_allow_html=True)
+
+load_css()
+
+# --- Helper Functions for Card UI ---
+def card_start():
+    """Starts a custom card div."""
+    st.markdown("<div class='card'>", unsafe_allow_html=True)
+
+def card_end():
+    """Ends a custom card div."""
     st.markdown("</div>", unsafe_allow_html=True)
 
-# ------------------------- Utilities -------------------------
-KNOWN_BRANDS = [
-    "google","microsoft","office","outlook","teams","azure","onedrive",
-    "cisco","meraki","umbrella","duo","blackboard","canvas","zoom",
-    "box","dropbox","github","slack","paypal","stripe","bankofamerica",
-    "wellsfargo","chase","university","student","finaid","bursar"
-]
-SUSP_TLDS = {"zip","kim","xyz","top","gq","ml","cf","tk","work","fit","rest","country","asia","science"}
+def card_highlight_start():
+    """Starts a custom highlighted card div."""
+    st.markdown("<div class='card-highlight'>", unsafe_allow_html=True)
 
-def download_bytes(filename: str, raw: bytes, label: str):
-    b64 = base64.b64encode(raw).decode()
-    st.markdown(f'<a download="{filename}" href="data:application/octet-stream;base64,{b64}">{label}</a>',
-                unsafe_allow_html=True)
+def card_highlight_end():
+    """Ends a custom highlighted card div."""
+    st.markdown("</div>", unsafe_allow_html=True)
 
-def domain_parts(url: str):
-    parsed = urlparse(url if re.match(r"^\w+://", url) else "http://" + url)
-    host = parsed.netloc or parsed.path
-    if tldextract:
-        ext = tldextract.extract(host)
-        domain = ext.registered_domain or (f"{ext.domain}.{ext.suffix}" if ext.domain and ext.suffix else ext.domain)
-        sld = ext.domain or ""
-        tld = ext.suffix or ""
-        sub = ext.subdomain or ""
-    else:
-        parts = host.split(".")
-        if len(parts) >= 2:
-            domain = ".".join(parts[-2:])
-            sld, tld = parts[-2], parts[-1]
-            sub = ".".join(parts[:-2])
-        else:
-            domain, sld, tld, sub = host, host, "", ""
-    return host, domain, sld, tld, sub, parsed
+def set_page(page_name):
+    """Helper function to set the page state."""
+    st.session_state.page = page_name
 
-def shannon_entropy(s: str):
-    if not s: return 0.0
-    from math import log2
-    probs = [float(s.count(c)) / len(s) for c in set(s)]
-    return -sum(p * log2(p) for p in probs)
+# --- ================================== ---
+# --- MODAL/SUB-PAGE RENDER FUNCTIONS ---
+# --- ================================== ---
 
-def looks_like_ip(host: str): return bool(re.match(r"^\d{1,3}(\.\d{1,3}){3}$", host))
-def punycode_present(host: str): return "xn--" in host.lower()
+@st.dialog("Event Details")
+def show_event_details_dialog():
+    """
+    Renders the Event Details modal (st.dialog).
+    Uses st.session_state.selected_event_details.
+    """
+    event = st.session_state.selected_event_details
+    if not event:
+        st.error("Could not load event details.")
+        st.button("Close")
+        return
 
-def brand_lookalike_score(sld: str):
-    if not sld: return 0.0
-    close = max(difflib.SequenceMatcher(a=sld.lower(), b=b).ratio() for b in KNOWN_BRANDS)
-    exact = sld.lower() in KNOWN_BRANDS
-    return 0.0 if exact else close
+    st.markdown(f"### {event['title']}")
+    st.markdown(f"**{event['time']}**")
+    st.markdown(f" **{event['loc']}** • 💰 **{event['cost']}** • 🚶 **{event['dist']}**")
+    st.markdown("---")
+    st.markdown(f"**About this event:**\n\n{event['details']}")
+    
+    # Check if already RSVP'd
+    already_rsvpd = event['id'] in st.session_state.my_schedule
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("RSVP", disabled=already_rsvpd, key=f"rsvp_modal_{event['id']}"):
+            st.session_state.my_schedule.append(event['id'])
+            st.toast("Added to your schedule!", icon="🗓️")
+            st.session_state.selected_event_details = None # Close dialog
+            st.rerun() # Re-run to update disabled state
+    with col2:
+        if st.button("Close", type="secondary"):
+            st.session_state.selected_event_details = None
+            st.rerun() # Re-run to close
 
-def url_feature_vector(url: str):
-    host, domain, sld, tld, sub, parsed = domain_parts(url)
-    path = parsed.path or ""
-    length = len(url)
-    sub_count = sub.count(".") + (1 if sub else 0)
-    dash_count = url.count("-")
-    at_count = url.count("@")
-    digit_ratio = sum(c.isdigit() for c in host) / max(1, len(host))
-    entropy = shannon_entropy(host + path)
-    ip = looks_like_ip(host)
-    puny = punycode_present(host)
-    tld_flag = tld.split(".")[-1] if tld else ""
-    tld_susp = 1 if tld_flag in SUSP_TLDS else 0
-    brand_score = brand_lookalike_score(sld)
-    path_deep = path.count("/")
-    has_port = bool(re.search(r":\d+$", host))
-    return {
-        "length": length, "subdomains": sub_count, "dashes": dash_count, "ats": at_count,
-        "digit_ratio": digit_ratio, "entropy": entropy,
-        "ip": int(ip), "punycode": int(puny), "tld_suspicious": tld_susp,
-        "brand_lookalike": brand_score, "path_depth": path_deep, "has_port": int(has_port),
-        "sld": sld, "tld": tld_flag, "host": host, "domain": domain
-    }
-
-def risk_score_from_features(f):
-    score = 0.0
-    score += min(30, f["length"]/8)
-    score += 7 * f["subdomains"]
-    score += 3 * f["dashes"]
-    score += 12 * f["ats"]
-    score += 30 * f["digit_ratio"]
-    score += min(20, 4 * f["entropy"])
-    score += 20 * f["ip"]
-    score += 20 * f["punycode"]
-    score += 12 * f["tld_suspicious"]
-    score += 35 * max(0, f["brand_lookalike"] - 0.65)
-    score += 2 * f["path_depth"]
-    score += 8 * f["has_port"]
-    return max(0.0, min(100.0, score))
-
-def metric_tile(label, value, sub=""):
+def show_breathing_exercise():
+    """
+    Renders the full-page breathing exercise modal.
+    Replaces the content of the 'Today' page when active.
+    """
+    card_highlight_start()
+    st.subheader("60-Second Breathing Reset")
     st.markdown(
-        f"""
-        <div class="metric">
-          <div class="big">{value}</div>
-          <div class="sub">{label}{(" — " + sub) if sub else ""}</div>
+        """
+        <div class="breathing-container">
+            <div class="breathing-circle">
+                <span class="breathing-text"></span>
+            </div>
+            <p style="margin-top: 20px;">Follow the rhythm. Inhale as the circle grows, exhale as it shrinks.</p>
         </div>
         """,
-        unsafe_allow_html=True,
+        unsafe_allow_html=True
     )
+    st.button("I'm Done", type="secondary", on_click=lambda: st.session_state.update(breathing_active=False))
+    card_highlight_end()
 
-# ------------------------- Pages -------------------------
-if selected == "Home":
-    with st.container():
-        st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
-        st.markdown("### Overview")
-        st.markdown(
-            "CyberBridge Guardian turns Cisco security building blocks into an operational, explainable demo for MSIs/HBCUs. "
-            "Duo drives phishing resistance; Umbrella reduces exposure; Meraki improves reliability; the Mini-SOC trains students; "
-            "and ROI is framed in equity outcomes."
-        )
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("<br/>", unsafe_allow_html=True)
-    c1, c2, c3, c4 = st.columns(4)
-    with c1: metric_tile("Reliability uplift (zones)", "65% → 99%", "Meraki plan")
-    with c2: metric_tile("Phishing reduction", "≈ 40%+", "Duo MFA")
-    with c3: metric_tile("Pre-block rate", "15–30%", "Umbrella DNS")
-    with c4: metric_tile("Net annual savings", "≈ $1.4M", "~5% breach reduction")
-
-    st.markdown("<hr/>", unsafe_allow_html=True)
-    with st.container():
-        st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
-        st.markdown("**Design principles**")
-        st.markdown(
-            "- Tie controls to institutional outcomes.\n"
-            "- Keep signals explainable and transparent.\n"
-            "- Reduce operator effort; keep paths to API integration.\n"
-            "- Use visuals that teach, not just decorate."
-        )
-        st.markdown("</div>", unsafe_allow_html=True)
-
-# ------------------------- Duo MFA (QR-only, inline verify) -------------------------
-elif selected == "Duo MFA":
-    st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
-    st.markdown("## Duo MFA, Enroll & Verify via a 6-digit TOTP")
+def show_wind_down_routine():
+    """
+    Renders the full-page wind-down modal.
+    Replaces the content of the 'Sleep' page when active.
+    """
+    card_highlight_start()
+    st.subheader("Start Your Wind-Down")
+    st.markdown("Try this 30-minute routine to prepare your mind for sleep.")
+    
     st.markdown(
-        "- Enrollment is via QR **scanned in Duo Mobile**.\n"
-        "- After scanning, enter the **6-digit code** from the app and click **Verify**.\n"
-        "- This demo only stores a simple device-binding hash in session."
+        """
+        <div class="wind-down-item">
+            <span> Put phone on charger (away from bed)</span>
+        </div>
+        <div class="wind-down-item">
+            <span> Read a physical book for 15 mins</span>
+        </div>
+        <div class="wind-down-item">
+            <span> Sip some non-caffeinated tea</span>
+        </div>
+        <div class="wind-down-item">
+            <span> Do a 5-minute guided meditation</span>
+        </div>
+        """,
+        unsafe_allow_html=True
     )
-    st.markdown("</div>", unsafe_allow_html=True)
+    
+    if st.button("Start 30-Min Timer"):
+        st.toast("Wind-down timer started. See you in 30!", icon="🌙")
+    
+    st.button("Close", type="secondary", on_click=lambda: st.session_state.update(wind_down_active=False))
+    card_highlight_end()
 
-    if qrcode is None or pyotp is None:
-        st.warning("For the live demo, install: `pip install pyotp qrcode[pil]`")
-    else:
-        # Initialize session state
-        if "totp_secret" not in st.session_state:
-            st.session_state.totp_secret = pyotp.random_base32()
-            st.session_state.bound_hash = None
-            st.session_state.duo_ack = False
+def show_placeholder_modal(title, message):
+    """
+    Renders a generic placeholder modal for non-functional buttons.
+    """
+    st.markdown(f"### {title}")
+    st.markdown(message)
+    if st.button("Close", type="secondary"):
+        st.session_state.show_modal = None
+        st.rerun()
 
-        secret = st.session_state.totp_secret
+# --- ================================== ---
+# --- MAIN PAGE RENDER FUNCTIONS ---
+# --- ================================== ---
 
-        # Two-column flow with a big arrow in the middle
-        col_left, col_arrow, col_right = st.columns([1.15, 0.2, 1], gap="large")
+# --- 1. TODAY / HOME PAGE ---
+def page_today():
+    """Renders the 'Today' (Home) page or its sub-modals."""
+    
+    # Check if a sub-page (like breathing) is active
+    if st.session_state.breathing_active:
+        show_breathing_exercise()
+        return  # Stop rendering the rest of the page
 
-        # ---------- LEFT: STEP 1 — Scan QR via Duo Mobile ----------
-        with col_left:
-            st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
-            st.subheader("Step 1. Scan the QR in Duo Mobile (please open the Duo app then press the show QR button below)")
+    # --- If no sub-page, render the main 'Today' page ---
+    st.title("Good Afternoon, Alex! ☀️")
+    st.markdown("How are you feeling right now?")
 
-            user_email = st.text_input("Campus email", "student@example.edu")
-            issuer = st.text_input("Issuer", "CyberBridge Guardian (Duo-style)")
+    # --- Check-In Card ---
+    card_start()
+    st.subheader("Daily Check-In")
+    mood = st.slider("Your Mood (1 = Low, 5 = Great)", 1, 5, 3)
+    stress = st.slider("Your Stress (1 = Low, 5 = High)", 1, 5, 2)
+    tags = st.multiselect(
+        "What's on your mind?",
+        ["Exams", "Homework", "Social", "Sleep", "Relationships", "Future"],
+        ["Exams"]
+    )
+    if st.button("Log Now", key="log_now"):
+        st.toast(f"Logged: Mood {mood}/5, Stress {stress}/5", icon="✅")
+    card_end()
 
-            # Reset / re-enroll
-            if st.button("Reset QR (re-enroll)"):
-                st.session_state.totp_secret = pyotp.random_base32()
-                st.session_state.bound_hash = None
-                st.session_state.duo_ack = False
-                secret = st.session_state.totp_secret
-                st.success("New secret generated. Re-scan the fresh QR.")
+    # --- Breathing Reset Card ---
+    card_highlight_start()
+    st.subheader("Try a Breathing Reset")
+    st.markdown("Your stress levels seem to be trending up this morning.")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Start 60-Sec Reset", key="start_breathing"):
+            st.session_state.breathing_active = True
+            st.rerun()
+    with col2:
+        st.button("Maybe Later", type="secondary", key="later_breathing")
+    card_highlight_end()
 
-            st.markdown(
-                "Open **Duo Mobile** → **Add** → **Use QR scanner**. "
-                "Then scan the QR below to bind this device."
-            )
+    # --- Insight Card ---
+    card_start()
+    st.subheader("Your AI Coach Insight 💡")
+    st.markdown("Your sleep dipped to ~6.5 hours before your stats exam. **Try a 10pm wind-down tonight** to stay ahead.")
+    st.button("Chat with Coach", type="secondary", key="chat_coach_home", on_click=set_page, args=("🤖 AI Coach",))
+    card_end()
 
-            # Acknowledge instructions to reveal QR (prevents accidental screenshots)
-            show_qr = st.button("I have Duo Mobile open... Show QR", disabled=st.session_state.duo_ack)
-            if show_qr:
-                st.session_state.duo_ack = True
-                st.toast("Duo instructions acknowledged.", icon="✅")
+    # --- Event Card ---
+    card_start()
+    st.subheader("Upcoming Event")
+    st.markdown("###  Wellness Week Yoga")
+    st.markdown(" **Rec Center** • **Free** • **0.3 mi away**")
+    st.markdown("Join us for a relaxing evening yoga session. All levels welcome!")
+    st.button("View All Events", key="view_events_home", on_click=set_page, args=("🎉 Events",))
+    card_end()
 
-            st.markdown("<hr/>", unsafe_allow_html=True)
+# --- 2. FOCUS / STUDY PAGE (UPGRADED) ---
+def page_focus():
+    """Renders the 'Focus Hub' page with a complete Pomodoro loop."""
+    st.title("Focus Hub")
+    ts = st.session_state.timer_state
 
-            if st.session_state.duo_ack:
-                uri = pyotp.TOTP(secret).provisioning_uri(
-                    name=user_email or "user@campus.edu",
-                    issuer_name=issuer or "CyberBridge"
-                )
-                img = qrcode.make(uri)
-                buf = io.BytesIO(); img.save(buf, format="PNG")
-                st.image(buf.getvalue(), caption="Scan this QR with Duo Mobile (or Google Authenticator / 1Password)")
-                st.caption("Demo transparency: secret shown below; in production this is never visible.")
-                st.code(secret, language="text")
+    if ts.running:
+        # --- TIMER IS RUNNING ---
+        
+        # Calculate remaining time
+        elapsed = time.time() - ts.start_time
+        current_duration_sec = (ts.duration_min if not ts.is_break else ts.break_duration_min) * 60
+        remaining_seconds = current_duration_sec - elapsed
+        
+        if remaining_seconds <= 0:
+            # --- TIMER FINISHED ---
+            st.balloons()
+            ts.running = False
+            
+            if ts.is_break:
+                # Break finished
+                st.header(f"Break's over! ")
+                st.markdown(f"Ready for another focus session?")
+                if st.button("Start Next Focus"):
+                    ts.is_break = False
+                    ts.running = True
+                    ts.start_time = time.time()
+                    st.rerun()
             else:
-                st.info("Click the acknowledge button above to reveal the QR code.")
+                # Focus session finished
+                st.header(f"Time's up! ")
+                st.markdown(f"You completed your focus session for **{ts.task_name}**.")
+                if st.button(f"Start {ts.break_duration_min}-min Break"):
+                    ts.is_break = True
+                    ts.running = True
+                    ts.start_time = time.time()
+                    st.rerun()
+            
+            st.button("Stop for Now", type="secondary", on_click=lambda: ts.update(running=False, is_break=False))
+        
+        else:
+            # --- TIMER IS ACTIVELY COUNTING DOWN ---
+            card_highlight_start()
+            timer_title = "Focusing on:" if not ts.is_break else "On a Break"
+            task_display = f"**{ts.task_name}**" if not ts.is_break else "Time to relax!"
+            
+            st.markdown(f"{timer_title} {task_display}")
+            
+            mins, secs = divmod(int(remaining_seconds), 60)
+            timer_display = f"{mins:02d}:{secs:02d}"
+            
+            # Display big timer
+            st.markdown(f"<h1 style='text-align: center; color: #4A148C; font-size: 5rem; margin-bottom: 0;'>{timer_display}</h1>", unsafe_allow_html=True)
+            
+            # Progress bar
+            percent_complete = elapsed / current_duration_sec
+            st.progress(percent_complete, text=f"{int(percent_complete * 100)}% complete")
+            card_highlight_end()
 
-            st.markdown("</div>", unsafe_allow_html=True)
+            if st.button("Stop Session", type="secondary"):
+                ts.running = False
+                ts.is_break = False
+                st.rerun()
+            
+            # This is the "hack" to force Streamlit to re-run the script
+            # to update the timer display.
+            time.sleep(1)
+            st.rerun()
+            
+    else:
+        # --- TIMER IS NOT RUNNING (Settings Screen) ---
+        st.markdown("Let's get in the zone. What are you working on?")
+        card_start()
+        
+        task = st.text_input("Task:", "Read Chapter 3 (Stats 210)")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            duration = st.number_input("Focus time (minutes):", 5, 120, 25, 5)
+        with col2:
+            break_time = st.number_input("Break time (minutes):", 5, 30, 5, 5)
 
-        # ---------- MIDDLE: ARROW ----------
-        with col_arrow:
-            st.markdown(
-                '<div class="fade-in" style="font-size:48px; line-height:1; text-align:center; padding-top:120px;">➡️</div>',
-                unsafe_allow_html=True
-            )
+        if st.button("Start Focus Session"):
+            # Set session state variables and rerun
+            ts.running = True
+            ts.start_time = time.time()
+            ts.duration_min = duration
+            ts.break_duration_min = break_time
+            ts.task_name = task
+            ts.is_break = False
+            st.rerun()
+        
+        card_end()
+        
+        card_start()
+        st.subheader("Why use a focus timer?")
+        st.markdown("The Pomodoro Technique breaks work into focused intervals (usually 25 mins) separated by short breaks. It's proven to boost productivity and reduce burnout.")
+        card_end()
 
-        # ---------- RIGHT: STEP 2 — Enter code & Verify ----------
-        with col_right:
-            st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
-            st.subheader("Step 2. Enter the 6-digit code from Duo")
+# --- 3. SLEEP TRACKER PAGE (UPGRADED) ---
+def page_sleep():
+    """Renders the 'Sleep' page or its sub-modals."""
+    
+    # Check if a sub-page (like wind-down) is active
+    if st.session_state.wind_down_active:
+        show_wind_down_routine()
+        return # Stop rendering the rest of the page
 
-            code_raw = st.text_input("6-digit code", max_chars=6, help="Type the 6 digits shown in Duo Mobile")
-            code = re.sub(r"[^0-9]", "", code_raw or "")
-            if code_raw and code_raw != code:
-                st.caption("Non-digits removed; codes are numeric only.")
+    # --- If no sub-page, render the main 'Sleep' page ---
+    st.title("Sleep Tracker")
+    st.markdown("Good sleep is the foundation of wellness.")
 
-            # Timer hint
-            totp = pyotp.TOTP(secret)
-            now = int(time.time()); period = getattr(totp, "interval", 30)
-            remaining = period - (now % period)
-            st.caption(f"Code refreshes in about {remaining}s")
-
-            if st.button("Verify"):
-                if len(code) != 6:
-                    st.error("Please enter the 6-digit code from Duo Mobile.")
-                else:
-                    ok = totp.verify(code.strip(), valid_window=1)
-                    if ok:
-                        # Bind on first success (demo only)
-                        if st.session_state.get("bound_hash") is None:
-                            bind_raw = f"{(user_email or 'user@campus.edu')}|{secret}"
-                            st.session_state.bound_hash = hashlib.sha256(bind_raw.encode()).hexdigest()
-                        st.success("Approved — Duo code verified and device bound.")
-                        try: st.balloons()
-                        except Exception: pass
-                    else:
-                        st.error("Invalid or expired code. Open Duo Mobile and try the current 6-digit code.")
-
-            st.markdown("</div>", unsafe_allow_html=True)
-
-# ------------------------- Umbrella DNS -------------------------
-elif selected == "Umbrella DNS":
-    st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
-    st.markdown("## Umbrella DNS Guard")
-    st.markdown(
-        "- Maintain allow / block / watch lists.\n"
-        "- Explainable URL risk (lookalike, punycode, TLD, entropy, port, etc.).\n"
-        "- Export results for audit and education."
-    )
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    # Lists
-    if "blocklist" not in st.session_state:
-        st.session_state.blocklist = set(["examp1e-helpdesk.com","login-verify-secure.net"]) if demo_mode else set()
-    if "allowlist" not in st.session_state:
-        st.session_state.allowlist = set(["duo.com","cisco.com","meraki.cisco.com","canvas.instructure.com"]) if demo_mode else set()
-    if "watchlist" not in st.session_state:
-        st.session_state.watchlist = set(["out1ook-login-secure.com","micr0soft-support-secure-login.com"]) if demo_mode else set()
-
-    three = st.columns(3)
-    with three[0]:
-        st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
-        st.markdown("### Blocklist")
-        blk_add = st.text_input("Add domain to block")
-        if st.button("Add → Blocklist"):
-            if blk_add.strip(): st.session_state.blocklist.add(blk_add.strip().lower())
-        st.code("\n".join(sorted(st.session_state.blocklist)) or "(empty)")
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    with three[1]:
-        st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
-        st.markdown("### Allowlist")
-        allow_add = st.text_input("Add domain to allow")
-        if st.button("Add → Allowlist"):
-            if allow_add.strip(): st.session_state.allowlist.add(allow_add.strip().lower())
-        st.code("\n".join(sorted(st.session_state.allowlist)) or "(empty)")
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    with three[2]:
-        st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
-        st.markdown("### Watchlist")
-        watch_add = st.text_input("Add domain to watch")
-        if st.button("Add → Watchlist"):
-            if watch_add.strip(): st.session_state.watchlist.add(watch_add.strip().lower())
-        st.code("\n".join(sorted(st.session_state.watchlist)) or "(empty)")
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("<br/>", unsafe_allow_html=True)
-
-    st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
-    st.subheader("Bulk evaluate (one URL per line)")
-    sample_bulk = (
-        "out1ook-login-secure.com\n"
-        "http://xn--pple-43d.com\n"
-        "https://duo.com\n"
-        "http://192.168.1.23/login\n"
-        "finaid-portal.support-verify.net"
-    )
-    urls_bulk = st.text_area("URLs", height=120, value=(sample_bulk if demo_mode else ""))
-
-    def policy_decision(u: str):
-        host, domain, sld, tld, sub, parsed = domain_parts(u)
-        d = (domain or host).lower()
-        if any(d.endswith(a) for a in st.session_state.allowlist):
-            return "ALLOW", 0
-        if any(d.endswith(b) for b in st.session_state.blocklist):
-            return "BLOCK", 100
-        for w in st.session_state.watchlist:
-            sim = difflib.SequenceMatcher(a=(sld or d).split(":")[0], b=w.split(".")[0]).ratio()
-            if sim > 0.8 or d.endswith(w):
-                return "WATCH", 60
-        f = url_feature_vector(u)
-        sc = risk_score_from_features(f)
-        if sc >= 60: return "BLOCK", sc
-        if sc >= 25: return "WATCH", sc
-        return "ALLOW", sc
-
-    if st.button("Evaluate Policy"):
-        rows = []
-        for line in urls_bulk.splitlines():
-            u = line.strip()
-            if not u: continue
-            decision, sc = policy_decision(u)
-            rows.append({"url": u, "decision": decision, "score": round(sc,1)})
-        if rows:
-            df = pd.DataFrame(rows).sort_values(["decision","score"], ascending=[True, False])
-            st.dataframe(df, use_container_width=True)
-            download_bytes("dns_policy_results.csv", df.to_csv(index=False).encode(), "Download CSV")
-            try: st.balloons()
-            except Exception: pass
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("<br/>", unsafe_allow_html=True)
-
-    st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
-    st.subheader("Explain a single URL")
-    bad = st.text_input("URL to explain", "https://micr0soft-support-secure-login.com/renew?session=9876")
-    if st.button("Explain URL"):
-        f = url_feature_vector(bad.strip()); sc = risk_score_from_features(f)
-        label = "Low" if sc < 25 else ("Medium" if sc < 60 else "High")
-        st.markdown(f"**Risk:** {label} — **Score:** {sc:.1f}/100")
-        st.write(pd.DataFrame([f]).T.rename(columns={0:"value"}))
-        st.caption("Signals: brand lookalike similarity, punycode, suspicious TLDs, IP host, deep paths, non-standard port, high entropy.")
-    st.markdown("</div>", unsafe_allow_html=True)
-
-# ------------------------- Meraki Planner -------------------------
-elif selected == "Meraki Planner":
-    st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
-    st.markdown("## Meraki Reliability Planner")
-    st.markdown(
-        "- Estimate AP counts for high-usage zones.\n"
-        "- Visualize stability around your target after redundancy."
-    )
-    st.markdown("</div>", unsafe_allow_html=True)
-
+    # --- Metric Cards ---
     col1, col2, col3 = st.columns(3)
     with col1:
-        peak_concurrency = st.slider("Peak concurrent users in zone", 50, 2000, 600)
-        sqft = st.number_input("Zone area (sq ft)", 35000, step=1000)
+        st.markdown(
+            "<div class='metric-card'><h3>Sleep Score</h3><p>82</p><small>Good</small></div>",
+            unsafe_allow_html=True
+        )
     with col2:
-        capacity_per_ap = st.slider("Users per AP (Meraki 6/6E)", 30, 120, 60)
-        overlap = st.slider("AP overlap (redundancy %)", 0, 50, 20)
+        st.markdown(
+            "<div class='metric-card'><h3>Duration</h3><p>7h 24m</p><small>Target: 8h</small></div>",
+            unsafe_allow_html=True
+        )
     with col3:
-        target_uptime = st.slider("Target uptime (%)", 95, 100, 99)
+        st.markdown(
+            "<div class='metric-card'><h3>Consistency</h3><p>↑ 5%</p><small>vs. last week</small></div>",
+            unsafe_allow_html=True
+        )
+    
+    st.markdown("---") # Visual separator
 
-    raw_aps = math.ceil(peak_concurrency / capacity_per_ap)
-    aps = math.ceil(raw_aps * (1 + overlap/100))
-    density = round(aps / max(1, sqft/1000), 2)
+    # --- Log Your Sleep Card ---
+    card_start()
+    st.subheader("Log Your Sleep")
+    with st.expander("Tap to open log"):
+        log_date = st.date_input("Night of:", datetime.date.today() - datetime.timedelta(days=1))
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            bed_time = st.time_input("Went to bed:", datetime.time(23, 30))
+        with col2:
+            wake_time = st.time_input("Woke up:", datetime.time(7, 15))
+        
+        quality = st.slider("Sleep Quality (1 = Poor, 5 = Great)", 1, 5, 4)
+        
+        if st.button("Save Log", type="secondary"):
+            st.toast("Sleep log saved!", icon="😴")
+    card_end()
 
-    cA, cB, cC = st.columns(3)
-    with cA: metric_tile("APs required (zone)", f"{aps} APs", f"base {raw_aps}")
-    with cB: metric_tile("AP density", f"{density} per 1k sq ft")
-    with cC: metric_tile("Reliability target", f"{target_uptime}%")
-
-    st.markdown("<br/>", unsafe_allow_html=True)
-    np.random.seed(7)
-    before_uptime = np.clip(np.random.normal(0.65, 0.07, 30), 0.3, 0.95)
-    after_uptime  = np.clip(np.random.normal(target_uptime/100.0, 0.02, 30), 0.8, 1.0)
-    df_health = pd.DataFrame({
-        "day": pd.date_range(end=datetime.today(), periods=30).date,
-        "before": (before_uptime*100).round(1),
-        "after":  (after_uptime*100).round(1),
-    })
-    st.line_chart(df_health.set_index("day"))
-    st.caption("For production, ingest Meraki telemetry; this demo shows stabilization near your target with redundancy.")
-
-# ------------------------- Mini-SOC -------------------------
-elif selected == "Mini-SOC":
-    st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
-    st.markdown("## Mini-SOC (Simulated)")
-    st.markdown("Generates realistic DNS blocks, login anomalies, and policy hits.")
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    if "soc_events" not in st.session_state or st.button("Regenerate Events"):
-        seeds = [
-            ("DNS_BLOCK", "Umbrella", "Blocked malicious domain", "micr0soft-secure-login.com"),
-            ("DNS_BLOCK", "Umbrella", "Blocked lookalike", "out1ook-helpdesk.net"),
-            ("LOGIN_ANOMALY", "Duo", "Impossible travel sign-in", "user01@campus.edu"),
-            ("LOGIN_ANOMALY", "Duo", "Possible MFA fatigue attempt", "student23@campus.edu"),
-            ("POLICY_HIT", "Guardian", "Watchlist matched", "finaid-portal.support-verify.net"),
-            ("POLICY_HIT", "Guardian", "Suspicious TLD", "student-aid.xyz"),
-            ("TRAINING", "NetAcad", "Student flagged phishing email", "s019"),
-        ]
-        rows = []
-        now = int(time.time())
-        for _ in range(50):
-            t = now - random.randint(0, 7*24*3600)
-            ev = random.choice(seeds)
-            severity = random.choice(["low","medium","high"])
-            rows.append({
-                "time": datetime.fromtimestamp(t).strftime("%Y-%m-%d %H:%M"),
-                "type": ev[0], "source": ev[1], "description": ev[2], "detail": ev[3],
-                "severity": severity,
-            })
-        st.session_state.soc_events = pd.DataFrame(rows).sort_values("time", ascending=False).reset_index(drop=True)
-
-    df = st.session_state.soc_events.copy()
-    f1, f2, f3 = st.columns(3)
-    with f1: types = st.multiselect("Type", options=sorted(df["type"].unique()), default=list(sorted(df["type"].unique())))
-    with f2: sevs  = st.multiselect("Severity", options=sorted(df["severity"].unique()), default=list(sorted(df["severity"].unique())))
-    with f3: query = st.text_input("Search")
-
-    mask = df["type"].isin(types) & df["severity"].isin(sevs)
-    if query.strip():
-        pat = re.compile(re.escape(query.strip()), re.IGNORECASE)
-        mask &= df.apply(lambda r: bool(pat.search(" ".join(map(str, r.values)))), axis=1)
-
-    view = df[mask]
-    st.dataframe(view, use_container_width=True, height=440)
-    download_bytes("mini_soc_events.csv", view.to_csv(index=False).encode(), "Download CSV")
-
-# ------------------------- ROI & Equity -------------------------
-elif selected == "ROI & Equity":
-    st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
-    st.markdown("## ROI & Equity Impact")
-    st.markdown(
-        "- Estimate incidents avoided via MFA, DNS filtering, and training.\n"
-        "- Translate savings into budget and tuition equivalents."
+    # --- Sleep Trends Chart ---
+    card_start()
+    st.subheader("Your Sleep Trends")
+    
+    # Fake data for the chart
+    data = {
+        "Day": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+        "Hours": [6.5, 7.0, 7.2, 6.8, 7.5, 8.1, 7.8],
+        "Target": [8.0] * 7
+    }
+    df = pd.DataFrame(data)
+    
+    # Melt for Altair
+    df_melted = df.melt('Day', var_name='Metric', value_name='Sleep Duration')
+    
+    # Base chart
+    base = alt.Chart(df_melted).mark_line(point=True).encode(
+        x=alt.X('Day', sort=["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]),
+        y=alt.Y('Sleep Duration', title='Hours of Sleep', scale=alt.Scale(domain=[5, 9])),
+        color=alt.Color('Metric', 
+                        scale={'domain': ['Hours', 'Target'], 
+                               'range': ['#6A11CB', '#D1C4E9']},
+                        legend=alt.Legend(title="Legend"))
+    ).properties(
+        title="Sleep Duration vs. Target (Last 7 Days)"
     )
-    st.markdown("</div>", unsafe_allow_html=True)
+    
+    # Add target line dashes
+    line = base.get_layer(0)
+    target_line = base.get_layer(1).mark_line(strokeDash=[5,5])
 
+    st.altair_chart((line + target_line).interactive(), width='stretch')
+    card_end()
+
+    # --- Wind-down Card ---
+    card_highlight_start()
+    st.subheader("Wind-down Routine")
+    st.markdown("Your average bedtime this week was **11:42 PM**. Students who wind-down 30 minutes before bed report better sleep quality.")
+    if st.button("Start Wind-down Routine", type="secondary", key="wind_down"):
+        st.session_state.wind_down_active = True
+        st.rerun()
+    card_highlight_end()
+
+# --- 4. EVENTS HUB PAGE (UPGRADED) ---
+def page_events():
+    """Renders the 'Events' page, handles RSVP, and shows Details modal."""
+    
+    # This check is crucial: if a dialog is open, we show it.
+    if st.session_state.selected_event_details:
+        show_event_details_dialog()
+        # Do not render the rest of the page while dialog is open
+        return
+
+    st.title("Campus Events")
+    st.markdown("Find wellness activities happening near you.")
+
+    # Event filters
+    st.selectbox(
+        "Filter by Category",
+        ["All", "Wellness", "Academic", "Social", "Fitness"],
+        label_visibility="collapsed"
+    )
+
+    # --- Featured Event ---
+    featured_event = st.session_state.all_events[0]
+    card_highlight_start()
+    st.subheader("Featured Event")
+    st.markdown(f"### {featured_event['title']}")
+    st.markdown(f"**{featured_event['time']}** @ {featured_event['loc']}")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        # Check if already RSVP'd
+        already_rsvpd = featured_event['id'] in st.session_state.my_schedule
+        if st.button("RSVP Now", key="rsvp_featured", disabled=already_rsvpd):
+            st.session_state.my_schedule.append(featured_event['id'])
+            st.toast("Added to your schedule!", icon="")
+            st.rerun()
+    with col2:
+        if st.button("Details", type="secondary", key="det_featured"):
+            st.session_state.selected_event_details = featured_event
+            st.rerun()
+    card_highlight_end()
+
+    st.subheader("All Events")
+    # Display *other* events as cards
+    for event in st.session_state.all_events[1:]:
+        card_start()
+        st.markdown(f"### {event['title']}")
+        st.markdown(f"**{event['time']}**")
+        st.markdown(f" **{event['loc']}** •  **{event['cost']}** •  **{event['dist']}**")
+        
+        c1, c2, c3 = st.columns([1, 1, 1.5])
+        with c1:
+            already_rsvpd = event['id'] in st.session_state.my_schedule
+            if st.button("RSVP", type="secondary", key=f"rsvp_{event['id']}", disabled=already_rsvpd):
+                st.session_state.my_schedule.append(event['id'])
+                st.toast("Added to your schedule!", icon="")
+                st.rerun()
+        with c2:
+            if st.button("Details", type="secondary", key=f"det_{event['id']}"):
+                st.session_state.selected_event_details = event
+                st.rerun()
+        card_end()
+
+# --- 5. NEW PAGE: MY SCHEDULE ---
+def page_my_schedule():
+    """Renders the user's personal schedule of RSVP'd events."""
+    st.title("My Schedule")
+    
+    if not st.session_state.my_schedule:
+        st.markdown("You haven't RSVP'd for any events yet.")
+        st.markdown("Go to the **Events** page to find activities!")
+        return
+
+    st.markdown("Here are your upcoming events.")
+    
+    # Get full event details from the IDs in my_schedule
+    event_details_map = {event['id']: event for event in st.session_state.all_events}
+    
+    for event_id in st.session_state.my_schedule:
+        event = event_details_map.get(event_id)
+        if event:
+            card_start()
+            st.markdown(f"### {event['title']}")
+            st.markdown(f"**{event['time']}**")
+            st.markdown(f" **{event['loc']}**")
+            
+            col1, col2, col3 = st.columns([1.2, 1, 1])
+            with col1:
+                st.button("View Details", type="secondary", key=f"detail_sched_{event_id}", on_click=lambda e=event: st.session_state.update(selected_event_details=e))
+            with col2:
+                if st.button("Cancel RSVP", type="secondary", key=f"cancel_sched_{event_id}"):
+                    st.session_state.my_schedule.remove(event_id)
+                    st.toast(f"Removed '{event['title']}' from schedule.", icon="")
+                    st.rerun()
+            card_end()
+
+# --- 6. NEW PAGE: RESOURCES ---
+def page_resources():
+    """Renders the 'Resources' page with filterable articles."""
+    st.title("Resources")
+    st.markdown("Explore articles and tools for your wellness.")
+    
+    categories = ["All"] + sorted(list(set(res["cat"] for res in st.session_state.all_resources)))
+    selected_cat = st.selectbox(
+        "Filter by Category",
+        categories,
+        label_visibility="collapsed"
+    )
+    
+    # Filter resources
+    if selected_cat == "All":
+        filtered_resources = st.session_state.all_resources
+    else:
+        filtered_resources = [res for res in st.session_state.all_resources if res["cat"] == selected_cat]
+
+    if not filtered_resources:
+        st.warning(f"No resources found in '{selected_cat}'.")
+        return
+
+    # Display resources
+    for res in filtered_resources:
+        st.markdown(
+            f"""
+            <div class="resource-card">
+                <img src="{res['img']}" alt="{res['title']}">
+                <div class="resource-card-content">
+                    <small>{res['cat'].upper()}</small>
+                    <h3>{res['title']}</h3>
+                    <small>{res['read_time']}</small>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        if st.button("Read More", key=f"read_{res['id']}", type="secondary"):
+            st.toast(f"Opening '{res['title']}'...", icon="📖")
+            
+# --- 7. AI COACH / MESSAGES PAGE ---
+def page_coach():
+    """Renders the 'AI Coach' chat interface."""
+    st.title("🤖 Your AI Wellness Coach")
+    st.markdown("Here are personalized insights and tips just for you.")
+
+    # --- Insight Card ---
+    card_highlight_start()
+    st.subheader("This week's insight:")
+    st.markdown("""
+    "Hey Alex! I noticed your **stress logs were highest** on the two days just before your Stats exam. 
+    
+    Your **sleep duration also dipped** to ~6.5 hours those nights. 
+    
+    For your next exam, let's try starting a 10-minute wind-down routine 30 minutes before your target 11 PM bedtime."
+    """)
+    card_highlight_end()
+
+    # --- Chat Interface ---
+    st.subheader("Chat with your Coach")
+
+    # Display a "fake" chat history
+    with st.chat_message("assistant", avatar="🤖"):
+        st.write("Hi Alex, how can I help you today? Are you looking for study tips, stress management, or something else?")
+
+    with st.chat_message("user", avatar="👤"):
+        st.write("I'm feeling overwhelmed about finals.")
+
+    with st.chat_message("assistant", avatar="🤖"):
+        st.write("That's completely understandable. It's a high-stress time. Let's break it down.")
+        st.write("1. **Prioritize:** What are your top 3 most urgent tasks?")
+        st.write("2. **Time-block:** Have you tried the 'Focus Hub' Pomodoro timer? It can help make large tasks feel more manageable.")
+        st.write("3. **Rest:** Don't forget to protect your sleep. It's when you consolidate memories!")
+
+    with st.chat_message("user", avatar="👤"):
+        st.write("Okay, I'll try the timer. I just feel like I don't have enough time.")
+        
+    with st.chat_message("assistant", avatar="🤖"):
+        st.write("It's a common feeling. But 25 minutes of *true* focus is often more effective than 2 hours of distracted studying. You've got this!")
+
+
+    # User input
+    if prompt := st.chat_input("Reply to your coach..."):
+        st.chat_message("user", avatar="👤").write(prompt)
+        
+        # Fake bot reply
+        with st.spinner("Coach is typing..."):
+            time.sleep(1.5)
+        st.chat_message("assistant", avatar="🤖").write(
+            "That's a great next step. Remember to take your 5-minute breaks! Let me know how that first session goes."
+        )
+
+# --- 8. PROFILE / SETTINGS PAGE (UPGRADED) ---
+def page_profile():
+    """Renders the 'Profile & Settings' page."""
+    
+    # --- Check for placeholder modals ---
+    if st.session_state.show_modal:
+        @st.dialog(st.session_state.show_modal)
+        def _show_modal():
+            if st.session_state.show_modal == "Privacy Policy":
+                show_placeholder_modal("Privacy Policy", "Your data is anonymized and used only for campus wellness research. We never sell your data.")
+            elif st.session_state.show_modal == "Help & Support":
+                show_placeholder_modal("Help & Support", "Please contact zenith-support@campus.edu for any issues.")
+            elif st.session_state.show_modal == "Logout":
+                show_placeholder_modal("Logout", "Are you sure you want to log out?")
+        _show_modal()
+        
+    st.title("⚙️ Profile & Settings")
+
+    # --- User Info Card ---
+    card_start()
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        st.image(
+            "https://placehold.co/100x100/6A11CB/FFFFFF?text=A&font=inter",
+            width=100,
+        )
+    with col2:
+        st.subheader("Alex Johnson")
+        st.markdown("B.S. Computer Science")
+        st.markdown("Joined: Nov 2024")
+    card_end()
+    
+    # --- Your Stats Card ---
+    card_start()
+    st.subheader("Your Stats (Last 7 Days)")
     col1, col2, col3 = st.columns(3)
     with col1:
-        pop_students = st.number_input("Students", 3500, step=50)
-        pop_staff = st.number_input("Faculty/Staff", 500, step=10)
-        baseline_incid = st.number_input("Baseline incidents per year", 4, step=1)
+        st.metric("Avg. Mood", "3.8 / 5", "↑ 0.2")
     with col2:
-        mfa_adopt = st.slider("MFA adoption (%)", 0, 100, 85)
-        dns_on = st.checkbox("Umbrella DNS filtering enabled", True)
-        training_pct = st.slider("Security training completion (%)", 0, 100, 70)
+        st.metric("Avg. Stress", "2.5 / 5", "↓ 0.5")
     with col3:
-        cost_per_incident = st.number_input("Avg. cost per incident ($)", 2_700_000, step=50_000)
-        program_cost = st.number_input("Annual program cost ($)", 300_000, step=10_000)
+        st.metric("Focus Hours", "12.5", "↑ 3.0")
+    card_end()
 
-    mfa_effect = 0.40 * (mfa_adopt/100.0)
-    dns_effect = 0.15 if dns_on else 0.0
-    training_effect = 0.10 * (training_pct/100.0)
-    total_reduction = min(0.75, mfa_effect + dns_effect + training_effect)
+    # --- Your Goals Card ---
+    card_start()
+    st.subheader("Your Wellness Goals")
+    
+    # Display existing goals
+    for i, goal in enumerate(st.session_state.user_goals):
+        col1, col2 = st.columns([0.9, 0.1])
+        with col1:
+            st.markdown(f"<span>• {goal}</span>", unsafe_allow_html=True)
+        with col2:
+            if st.button("✕", key=f"del_{i}", help="Remove goal"):
+                st.session_state.user_goals.pop(i)
+                st.rerun()
+    
+    # Add new goal
+    st.markdown("---")
+    new_goal = st.text_input("Add a new goal:")
+    if st.button("Add Goal", type="secondary"):
+        if new_goal and new_goal not in st.session_state.user_goals:
+            st.session_state.user_goals.append(new_goal)
+            st.rerun()
+    card_end()
 
-    avoided = baseline_incid * total_reduction
-    gross = avoided * cost_per_incident
-    net = gross - program_cost
-    tuition_equiv = max(0, net) / 28000.0
+    # --- Settings Card ---
+    card_start()
+    st.subheader("App Settings")
+    st.toggle("Enable Push Notifications", value=True)
+    st.toggle("Sync with Calendar", value=True)
+    st.toggle("Personalize AI Coach", value=True)
+    
+    st.subheader("Data & Privacy")
+    st.toggle("Share Anonymized Data for Research", value=True)
+    if st.button("View Privacy Policy", type="secondary", key="privacy"):
+        st.session_state.show_modal = "Privacy Policy"
+        st.rerun()
+    card_end()
+    
+    # --- Actions ---
+    card_start()
+    if st.button("Help & Support", key="help"):
+        st.session_state.show_modal = "Help & Support"
+        st.rerun()
+    if st.button("Logout", type="secondary", key="logout"):
+        st.session_state.show_modal = "Logout"
+        st.rerun()
+    card_end()
 
-    cA, cB, cC, cD = st.columns(4)
-    with cA: metric_tile("Incidents avoided / yr", f"{avoided:.2f}")
-    with cB: metric_tile("Gross savings / yr", f"${gross:,.0f}")
-    with cC: metric_tile("Program cost / yr", f"${program_cost:,.0f}")
-    with cD: metric_tile("Tuition equivalents", f"{int(tuition_equiv):,} students")
 
-    st.markdown("<hr/>", unsafe_allow_html=True)
-    st.markdown(
-        f"With Duo MFA at **{mfa_adopt}%**, Umbrella DNS "
-        f"{'**enabled**' if dns_on else '**disabled**'}, and **{training_pct}%** training completion, "
-        f"the modeled reduction in successful phishing/ransomware is **~{int(total_reduction*100)}%**. "
-        f"Against **{baseline_incid}** incidents/year at **${cost_per_incident:,.0f}** each, "
-        f"this avoids **{avoided:.2f}** incidents and yields **${gross:,.0f}** in gross savings. "
-        f"After program costs (**${program_cost:,.0f}**), net impact is **${net:,.0f}** "
-        f"(~**{int(tuition_equiv):,}** tuition equivalents)."
-    )
+# --- ================================== ---
+# --- MAIN APP ROUTER ---
+# --- ================================== ---
 
-# ------------------------- Appendix -------------------------
-elif selected == "Appendix":
-    st.markdown('<div class="card fade-in">', unsafe_allow_html=True)
-    st.markdown("## Appendix: Context & Stakeholders")
-    st.markdown(
-        "- Higher-ed threats and constraints at MSIs/HBCUs.\n"
-        "- How Meraki (reliability), Umbrella (pre-block), Duo (MFA), and NetAcad (people) combine into CyberBridge."
-    )
-    st.markdown("### Stakeholders")
-    st.markdown(
-        "- **Internal (Cisco):** Social Impact & Inclusion, NetAcad staff, regional AEs\n"
-        "- **External:** Partner MSIs/HBCUs (AL/MS/TX), faculty & IT, nonprofits (e.g., MS-CC), partners\n"
-        "- **Community:** Students & families, employers"
-    )
-    st.markdown("### Why this web application")
-    st.markdown(
-        "- **Operational:** day-to-day impact beyond slideware.\n"
-        "- **Explainable:** transparent risk factors and policy rationales.\n"
-        "- **Educational:** student SOC rotations with realistic exercises.\n"
-        "- **Measurable:** ROI in budgeting/equity terms."
-    )
-    st.markdown("</div>", unsafe_allow_html=True)
+st.sidebar.title("Zenith")
+st.sidebar.markdown("Modern Campus Wellness")
 
-# ------------------------- Footer -------------------------
-st.markdown("<hr/>", unsafe_allow_html=True)
-st.markdown('<div class="small" style="text-align:center;">© CyberBridge — Built for MSIs/HBCUs. Synthetic data only; no institutional credentials.</div>',
-            unsafe_allow_html=True)
+# Define navigation options
+nav_options = [
+    "Today", 
+    "Focus", 
+    "Sleep", 
+    "Events", 
+    "My Schedule", 
+    "Resources", 
+    "AI Coach", 
+    "Profile"
+]
+
+page = st.sidebar.radio(
+    "Navigation",
+    nav_options,
+    label_visibility="hidden",
+    key="page" # Use session state key
+)
+
+# Page Routing
+if page == "Today":
+    page_today()
+elif page == "Focus":
+    page_focus()
+elif page == "Sleep":
+    page_sleep()
+elif page == "Events":
+    page_events()
+elif page == "My Schedule":
+    page_my_schedule()
+elif page == "Resources":
+    page_resources()
+elif page == "AI Coach":
+    page_coach()
+elif page == "Profile":
+    page_profile()
+
+# --- Final cleanup check for modals ---
+# This ensures modals can be opened from *any* page (e.g., details from schedule)
+if st.session_state.selected_event_details and page not in ["🎉 Events", "🗓️ My Schedule"]:
+    show_event_details_dialog()
+
+if st.session_state.show_modal and page != "⚙️ Profile":
+    @st.dialog(st.session_state.show_modal)
+    def _show_modal_global():
+        if st.session_state.show_modal == "Privacy Policy":
+            show_placeholder_modal("Privacy Policy", "Your data is anonymized and used only for campus wellness research. We never sell your data.")
+        elif st.session_state.show_modal == "Help & Support":
+            show_placeholder_modal("Help & Support", "Please contact zenith-support@campus.edu for any issues.")
+        elif st.session_state.show_modal == "Logout":
+            show_placeholder_modal("Logout", "Are you sure you want to log out?")
+    _show_modal_global()
