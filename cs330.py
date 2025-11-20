@@ -63,13 +63,14 @@ def get_default_resources():
         {"id": "res3", "cat": "Campus", "title": "Contact Campus Counseling Services", "read_time": "1 min read", "img": "https://placehold.co/600x400/EDE7F6/4A148C?text=Campus&font=inter"},
         {"id": "res4", "cat": "Mental Health", "title": "Understanding Burnout vs. Stress", "read_time": "5 min read", "img": "https://placehold.co/600x400/EDE7F6/4A148C?text=Wellness&font=inter"},
         {"id": "res5", "cat": "Sleep", "title": "Why 8 Hours is Non-Negotiable", "read_time": "4 min read", "img": "https://placehold.co/600x400/EDE7F6/4A148C?text=Sleep&font=inter"},
-        {"id": "res6", "cat": "Study", "title": "Active Recall: How to Really Learn", "read_time": "6 min read", "img": "https.placehold.co/600x400/EDE7F6/4A148C?text=Academics&font=inter"},
+        # fixed img URL here:
+        {"id": "res6", "cat": "Study", "title": "Active Recall: How to Really Learn", "read_time": "6 min read", "img": "https://placehold.co/600x400/EDE7F6/4A148C?text=Academics&font=inter"},
     ]
 
 # --- Initialize Session State ---
 # This is the "brain" of the app, controlling all interactivity.
 if 'page' not in st.session_state:
-    st.session_state.page = "🏠 Today"
+    st.session_state.page = "Today"
 if 'user_goals' not in st.session_state:
     st.session_state.user_goals = ["Meditate 5 mins/day", "Sleep 8 hours"]
 
@@ -83,6 +84,12 @@ if 'timer_state' not in st.session_state:
         is_break=False,
         break_duration_min=5
     )
+
+# helper: stop timer cleanly (replaces ts.update which doesn't exist)
+def stop_timer():
+    ts = st.session_state.timer_state
+    ts.running = False
+    ts.is_break = False
 
 # --- Modal & Sub-Page States ---
 if 'breathing_active' not in st.session_state:
@@ -400,7 +407,7 @@ def show_event_details_dialog():
 
     st.markdown(f"### {event['title']}")
     st.markdown(f"**{event['time']}**")
-    st.markdown(f" **{event['loc']}** • 💰 **{event['cost']}** • 🚶 **{event['dist']}**")
+    st.markdown(f"Location: {event['loc']} • Cost: {event['cost']} • Distance: {event['dist']}")
     st.markdown("---")
     st.markdown(f"**About this event:**\n\n{event['details']}")
     
@@ -411,7 +418,7 @@ def show_event_details_dialog():
     with col1:
         if st.button("RSVP", disabled=already_rsvpd, key=f"rsvp_modal_{event['id']}"):
             st.session_state.my_schedule.append(event['id'])
-            st.toast("Added to your schedule!", icon="🗓️")
+            st.toast("Added to your schedule!")
             st.session_state.selected_event_details = None # Close dialog
             st.rerun() # Re-run to update disabled state
     with col2:
@@ -452,23 +459,23 @@ def show_wind_down_routine():
     st.markdown(
         """
         <div class="wind-down-item">
-            <span> Put phone on charger (away from bed)</span>
+            <span>Put phone on charger (away from bed)</span>
         </div>
         <div class="wind-down-item">
-            <span> Read a physical book for 15 mins</span>
+            <span>Read a physical book for 15 mins</span>
         </div>
         <div class="wind-down-item">
-            <span> Sip some non-caffeinated tea</span>
+            <span>Sip some non-caffeinated tea</span>
         </div>
         <div class="wind-down-item">
-            <span> Do a 5-minute guided meditation</span>
+            <span>Do a 5-minute guided meditation</span>
         </div>
         """,
         unsafe_allow_html=True
     )
     
     if st.button("Start 30-Min Timer"):
-        st.toast("Wind-down timer started. See you in 30!", icon="🌙")
+        st.toast("Wind-down timer started. See you in 30!")
     
     st.button("Close", type="secondary", on_click=lambda: st.session_state.update(wind_down_active=False))
     card_highlight_end()
@@ -497,7 +504,7 @@ def page_today():
         return  # Stop rendering the rest of the page
 
     # --- If no sub-page, render the main 'Today' page ---
-    st.title("Good Afternoon, Alex! ☀️")
+    st.title("Good Afternoon, Alex!")
     st.markdown("How are you feeling right now?")
 
     # --- Check-In Card ---
@@ -511,7 +518,7 @@ def page_today():
         ["Exams"]
     )
     if st.button("Log Now", key="log_now"):
-        st.toast(f"Logged: Mood {mood}/5, Stress {stress}/5", icon="✅")
+        st.toast(f"Logged: Mood {mood}/5, Stress {stress}/5")
     card_end()
 
     # --- Breathing Reset Card ---
@@ -529,18 +536,18 @@ def page_today():
 
     # --- Insight Card ---
     card_start()
-    st.subheader("Your AI Coach Insight 💡")
+    st.subheader("Your AI Coach Insight")
     st.markdown("Your sleep dipped to ~6.5 hours before your stats exam. **Try a 10pm wind-down tonight** to stay ahead.")
-    st.button("Chat with Coach", type="secondary", key="chat_coach_home", on_click=set_page, args=("🤖 AI Coach",))
+    st.button("Chat with Coach", type="secondary", key="chat_coach_home", on_click=set_page, args=("AI Coach",))
     card_end()
 
     # --- Event Card ---
     card_start()
     st.subheader("Upcoming Event")
-    st.markdown("###  Wellness Week Yoga")
-    st.markdown(" **Rec Center** • **Free** • **0.3 mi away**")
+    st.markdown("### Wellness Week Yoga")
+    st.markdown("Location: **Rec Center** • Cost: **Free** • Distance: **0.3 mi away**")
     st.markdown("Join us for a relaxing evening yoga session. All levels welcome!")
-    st.button("View All Events", key="view_events_home", on_click=set_page, args=("🎉 Events",))
+    st.button("View All Events", key="view_events_home", on_click=set_page, args=("Events",))
     card_end()
 
 # --- 2. FOCUS / STUDY PAGE (UPGRADED) ---
@@ -564,7 +571,7 @@ def page_focus():
             
             if ts.is_break:
                 # Break finished
-                st.header(f"Break's over! ")
+                st.header(f"Break's over!")
                 st.markdown(f"Ready for another focus session?")
                 if st.button("Start Next Focus"):
                     ts.is_break = False
@@ -573,7 +580,7 @@ def page_focus():
                     st.rerun()
             else:
                 # Focus session finished
-                st.header(f"Time's up! ")
+                st.header(f"Time's up!")
                 st.markdown(f"You completed your focus session for **{ts.task_name}**.")
                 if st.button(f"Start {ts.break_duration_min}-min Break"):
                     ts.is_break = True
@@ -581,7 +588,8 @@ def page_focus():
                     ts.start_time = time.time()
                     st.rerun()
             
-            st.button("Stop for Now", type="secondary", on_click=lambda: ts.update(running=False, is_break=False))
+            # fixed: use stop_timer instead of ts.update(...)
+            st.button("Stop for Now", type="secondary", on_click=stop_timer)
         
         else:
             # --- TIMER IS ACTIVELY COUNTING DOWN ---
@@ -690,7 +698,7 @@ def page_sleep():
         quality = st.slider("Sleep Quality (1 = Poor, 5 = Great)", 1, 5, 4)
         
         if st.button("Save Log", type="secondary"):
-            st.toast("Sleep log saved!", icon="😴")
+            st.toast("Sleep log saved!")
     card_end()
 
     # --- Sleep Trends Chart ---
@@ -708,23 +716,25 @@ def page_sleep():
     # Melt for Altair
     df_melted = df.melt('Day', var_name='Metric', value_name='Sleep Duration')
     
-    # Base chart
-    base = alt.Chart(df_melted).mark_line(point=True).encode(
+    # Base encodings (fixed layering logic – no get_layer)
+    base = alt.Chart(df_melted).encode(
         x=alt.X('Day', sort=["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]),
         y=alt.Y('Sleep Duration', title='Hours of Sleep', scale=alt.Scale(domain=[5, 9])),
-        color=alt.Color('Metric', 
-                        scale={'domain': ['Hours', 'Target'], 
-                               'range': ['#6A11CB', '#D1C4E9']},
+        color=alt.Color('Metric',
+                        scale=alt.Scale(domain=['Hours', 'Target'],
+                                        range=['#6A11CB', '#D1C4E9']),
                         legend=alt.Legend(title="Legend"))
     ).properties(
         title="Sleep Duration vs. Target (Last 7 Days)"
     )
     
-    # Add target line dashes
-    line = base.get_layer(0)
-    target_line = base.get_layer(1).mark_line(strokeDash=[5,5])
+    hours_line = base.transform_filter(alt.datum.Metric == 'Hours').mark_line(point=True)
+    target_line = base.transform_filter(alt.datum.Metric == 'Target').mark_line(
+        point=True,
+        strokeDash=[5, 5]
+    )
 
-    st.altair_chart((line + target_line).interactive(), width='stretch')
+    st.altair_chart((hours_line + target_line).interactive(), use_container_width=True)
     card_end()
 
     # --- Wind-down Card ---
@@ -769,7 +779,7 @@ def page_events():
         already_rsvpd = featured_event['id'] in st.session_state.my_schedule
         if st.button("RSVP Now", key="rsvp_featured", disabled=already_rsvpd):
             st.session_state.my_schedule.append(featured_event['id'])
-            st.toast("Added to your schedule!", icon="")
+            st.toast("Added to your schedule!")
             st.rerun()
     with col2:
         if st.button("Details", type="secondary", key="det_featured"):
@@ -783,14 +793,14 @@ def page_events():
         card_start()
         st.markdown(f"### {event['title']}")
         st.markdown(f"**{event['time']}**")
-        st.markdown(f" **{event['loc']}** •  **{event['cost']}** •  **{event['dist']}**")
+        st.markdown(f"Location: **{event['loc']}** • Cost: **{event['cost']}** • Distance: **{event['dist']}**")
         
         c1, c2, c3 = st.columns([1, 1, 1.5])
         with c1:
             already_rsvpd = event['id'] in st.session_state.my_schedule
             if st.button("RSVP", type="secondary", key=f"rsvp_{event['id']}", disabled=already_rsvpd):
                 st.session_state.my_schedule.append(event['id'])
-                st.toast("Added to your schedule!", icon="")
+                st.toast("Added to your schedule!")
                 st.rerun()
         with c2:
             if st.button("Details", type="secondary", key=f"det_{event['id']}"):
@@ -819,7 +829,7 @@ def page_my_schedule():
             card_start()
             st.markdown(f"### {event['title']}")
             st.markdown(f"**{event['time']}**")
-            st.markdown(f" **{event['loc']}**")
+            st.markdown(f"Location: **{event['loc']}**")
             
             col1, col2, col3 = st.columns([1.2, 1, 1])
             with col1:
@@ -827,7 +837,7 @@ def page_my_schedule():
             with col2:
                 if st.button("Cancel RSVP", type="secondary", key=f"cancel_sched_{event_id}"):
                     st.session_state.my_schedule.remove(event_id)
-                    st.toast(f"Removed '{event['title']}' from schedule.", icon="")
+                    st.toast(f"Removed '{event['title']}' from schedule.")
                     st.rerun()
             card_end()
 
@@ -870,12 +880,12 @@ def page_resources():
             unsafe_allow_html=True
         )
         if st.button("Read More", key=f"read_{res['id']}", type="secondary"):
-            st.toast(f"Opening '{res['title']}'...", icon="📖")
+            st.toast(f"Opening '{res['title']}'...")
             
 # --- 7. AI COACH / MESSAGES PAGE ---
 def page_coach():
     """Renders the 'AI Coach' chat interface."""
-    st.title("🤖 Your AI Wellness Coach")
+    st.title("Your AI Wellness Coach")
     st.markdown("Here are personalized insights and tips just for you.")
 
     # --- Insight Card ---
@@ -894,33 +904,33 @@ def page_coach():
     st.subheader("Chat with your Coach")
 
     # Display a "fake" chat history
-    with st.chat_message("assistant", avatar="🤖"):
+    with st.chat_message("assistant", avatar="A"):
         st.write("Hi Alex, how can I help you today? Are you looking for study tips, stress management, or something else?")
 
-    with st.chat_message("user", avatar="👤"):
+    with st.chat_message("user", avatar="U"):
         st.write("I'm feeling overwhelmed about finals.")
 
-    with st.chat_message("assistant", avatar="🤖"):
+    with st.chat_message("assistant", avatar="A"):
         st.write("That's completely understandable. It's a high-stress time. Let's break it down.")
         st.write("1. **Prioritize:** What are your top 3 most urgent tasks?")
         st.write("2. **Time-block:** Have you tried the 'Focus Hub' Pomodoro timer? It can help make large tasks feel more manageable.")
         st.write("3. **Rest:** Don't forget to protect your sleep. It's when you consolidate memories!")
 
-    with st.chat_message("user", avatar="👤"):
+    with st.chat_message("user", avatar="U"):
         st.write("Okay, I'll try the timer. I just feel like I don't have enough time.")
         
-    with st.chat_message("assistant", avatar="🤖"):
+    with st.chat_message("assistant", avatar="A"):
         st.write("It's a common feeling. But 25 minutes of *true* focus is often more effective than 2 hours of distracted studying. You've got this!")
 
 
     # User input
     if prompt := st.chat_input("Reply to your coach..."):
-        st.chat_message("user", avatar="👤").write(prompt)
+        st.chat_message("user", avatar="U").write(prompt)
         
         # Fake bot reply
         with st.spinner("Coach is typing..."):
             time.sleep(1.5)
-        st.chat_message("assistant", avatar="🤖").write(
+        st.chat_message("assistant", avatar="A").write(
             "That's a great next step. Remember to take your 5-minute breaks! Let me know how that first session goes."
         )
 
@@ -940,7 +950,7 @@ def page_profile():
                 show_placeholder_modal("Logout", "Are you sure you want to log out?")
         _show_modal()
         
-    st.title("⚙️ Profile & Settings")
+    st.title("Profile & Settings")
 
     # --- User Info Card ---
     card_start()
@@ -961,11 +971,11 @@ def page_profile():
     st.subheader("Your Stats (Last 7 Days)")
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Avg. Mood", "3.8 / 5", "↑ 0.2")
+        st.metric("Avg. Mood", "3.8 / 5", "Up 0.2")
     with col2:
-        st.metric("Avg. Stress", "2.5 / 5", "↓ 0.5")
+        st.metric("Avg. Stress", "2.5 / 5", "Down 0.5")
     with col3:
-        st.metric("Focus Hours", "12.5", "↑ 3.0")
+        st.metric("Focus Hours", "12.5", "Up 3.0")
     card_end()
 
     # --- Your Goals Card ---
@@ -976,9 +986,9 @@ def page_profile():
     for i, goal in enumerate(st.session_state.user_goals):
         col1, col2 = st.columns([0.9, 0.1])
         with col1:
-            st.markdown(f"<span>• {goal}</span>", unsafe_allow_html=True)
+            st.markdown(f"<span style='margin-left: 5px;'>{goal}</span>", unsafe_allow_html=True)
         with col2:
-            if st.button("✕", key=f"del_{i}", help="Remove goal"):
+            if st.button("Remove", key=f"del_{i}", help="Remove goal"):
                 st.session_state.user_goals.pop(i)
                 st.rerun()
     
@@ -1062,10 +1072,10 @@ elif page == "Profile":
 
 # --- Final cleanup check for modals ---
 # This ensures modals can be opened from *any* page (e.g., details from schedule)
-if st.session_state.selected_event_details and page not in ["🎉 Events", "🗓️ My Schedule"]:
+if st.session_state.selected_event_details and page not in ["Events", "My Schedule"]:
     show_event_details_dialog()
 
-if st.session_state.show_modal and page != "⚙️ Profile":
+if st.session_state.show_modal and page != "Profile":
     @st.dialog(st.session_state.show_modal)
     def _show_modal_global():
         if st.session_state.show_modal == "Privacy Policy":
